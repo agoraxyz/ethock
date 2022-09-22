@@ -1,25 +1,36 @@
-use crate::methods;
-use std::thread;
-use jsonrpc_http_server::jsonrpc_core::{IoHandler, Value, Params};
-use jsonrpc_http_server::{ServerBuilder, RequestMiddleware, RequestMiddlewareAction};
-use log::{info, LevelFilter};
-use jsonrpc_http_server::hyper::{Request, Body};
+use crate::{methods, substrate};
 use env_logger::{Builder, Target};
+use jsonrpc_core::{Params, Value};
+use jsonrpc_core::IoHandler;
+use jsonrpc_http_server::{
+    hyper::{Body, Request},
+    {RequestMiddleware, RequestMiddlewareAction},
+};
+use log::{info, LevelFilter};
+use std::thread;
+
+#[derive(Clone, Copy)]
+pub enum ServerType {
+    HTTP = 0,
+    WS = 1,
+}
 
 pub struct Entry {
     addr: String,
+    server_type: ServerType,
 }
 
 impl Clone for Entry {
     fn clone(&self) -> Entry {
         Entry {
             addr: self.addr.clone(),
+            server_type: self.server_type.clone(),
         }
     }
 }
 
 impl Entry {
-    pub fn new(addr: &str, log_level: &str) -> Self {
+    pub fn new(server_type: ServerType, addr: &str, log_level: &str) -> Self {
         let log_level: LevelFilter = match log_level {
             "error" => LevelFilter::Error,
             "warn" => LevelFilter::Warn,
@@ -36,6 +47,7 @@ impl Entry {
 
         Entry {
             addr: String::from(addr),
+            server_type,
         }
     }
 
@@ -44,16 +56,26 @@ impl Entry {
     }
 
     pub fn serve(self) {
-        let server = ServerBuilder::new(self.setup_methods())
-            .threads(3)
-            .request_middleware(LoggerMiddleware{})
-            .start_http(&self.addr.parse().unwrap())
-            .unwrap();
-
-        server.wait();
+        match self.server_type {
+            ServerType::HTTP => {
+                jsonrpc_http_server::ServerBuilder::new(self.setup_eth_methods())
+                    .threads(3)
+                    .request_middleware(LoggerMiddleware {})
+                    .start_http(&self.addr.parse().unwrap())
+                    .unwrap()
+                    .wait();
+            }
+            ServerType::WS => {
+                jsonrpc_ws_server::ServerBuilder::new(self.setup_sub_methods())
+                    .start(&self.addr.parse().unwrap())
+                    .unwrap()
+                    .wait()
+                    .expect("An error has occured and the server has crashed");
+            }
+        };
     }
 
-    fn setup_methods(&self) -> IoHandler {
+    fn setup_eth_methods(&self) -> IoHandler {
         let mut io = IoHandler::default();
 
         io.add_method(methods::WEB3_CLIENT_VERSION, |_params: Params| async {
@@ -61,7 +83,9 @@ impl Entry {
         });
 
         io.add_method(methods::WEB3_SHA3, |_params: Params| async {
-            Ok(Value::String("0x47173285a8d7341e5e972fc677286384f802f8ef42a5ec5f03bbfa254cb01fad".to_owned()))
+            Ok(Value::String(
+                "0x47173285a8d7341e5e972fc677286384f802f8ef42a5ec5f03bbfa254cb01fad".to_owned(),
+            ))
         });
 
         io.add_method(methods::NET_VERSION, |_params: Params| async {
@@ -82,15 +106,26 @@ impl Entry {
 
         io.add_method(methods::ETH_SYNCING, |_params: Params| async {
             let mut data = jsonrpc_core::serde_json::Map::new();
-            data.insert("startingBlock".to_string(), Value::String("0x384".to_owned()));
-            data.insert("currentBlock".to_string(), Value::String("0x386".to_owned()));
-            data.insert("highestBlock".to_string(), Value::String("0x454".to_owned()));
+            data.insert(
+                "startingBlock".to_string(),
+                Value::String("0x384".to_owned()),
+            );
+            data.insert(
+                "currentBlock".to_string(),
+                Value::String("0x386".to_owned()),
+            );
+            data.insert(
+                "highestBlock".to_string(),
+                Value::String("0x454".to_owned()),
+            );
 
             Ok(Value::Object(data))
         });
 
         io.add_method(methods::ETH_COINBASE, |_params: Params| async {
-            Ok(Value::String("0x407d73d8a49eeb85d32cf465507dd71d507100c1".to_owned()))
+            Ok(Value::String(
+                "0x407d73d8a49eeb85d32cf465507dd71d507100c1".to_owned(),
+            ))
         });
 
         io.add_method(methods::ETH_MINING, |_params: Params| async {
@@ -106,7 +141,9 @@ impl Entry {
         });
 
         io.add_method(methods::ETH_ACCOUNTS, |_params: Params| async {
-            Ok(Value::Array(vec![Value::String("0x407d73d8a49eeb85d32cf465507dd71d507100c1".to_owned())]))
+            Ok(Value::Array(vec![Value::String(
+                "0x407d73d8a49eeb85d32cf465507dd71d507100c1".to_owned(),
+            )]))
         });
 
         io.add_method(methods::ETH_BLOCK_NUMBER, |_params: Params| async {
@@ -118,28 +155,35 @@ impl Entry {
         });
 
         io.add_method(methods::ETH_GET_STORAGE_AT, |_params: Params| async {
-            Ok(Value::String("0x000000000000000000000000000000000000000000000000000000000000162e".to_owned()))
+            Ok(Value::String(
+                "0x000000000000000000000000000000000000000000000000000000000000162e".to_owned(),
+            ))
         });
 
-        io.add_method(methods::ETH_GET_TRANSACTION_COUNT, |_params: Params| async {
-            Ok(Value::String("0x1".to_owned()))
-        });
+        io.add_method(
+            methods::ETH_GET_TRANSACTION_COUNT,
+            |_params: Params| async { Ok(Value::String("0x1".to_owned())) },
+        );
 
-        io.add_method(methods::ETH_GET_BLOCK_TRANSACTION_COUNT_BY_HASH, |_params: Params| async {
-            Ok(Value::String("0xb".to_owned()))
-        });
+        io.add_method(
+            methods::ETH_GET_BLOCK_TRANSACTION_COUNT_BY_HASH,
+            |_params: Params| async { Ok(Value::String("0xb".to_owned())) },
+        );
 
-        io.add_method(methods::ETH_GET_BLOCK_TRANSACTION_COUNT_BY_NUMBER, |_params: Params| async {
-            Ok(Value::String("0xa".to_owned()))
-        });
+        io.add_method(
+            methods::ETH_GET_BLOCK_TRANSACTION_COUNT_BY_NUMBER,
+            |_params: Params| async { Ok(Value::String("0xa".to_owned())) },
+        );
 
-        io.add_method(methods::ETH_GET_UNCLE_COUNT_BY_BLOCK_HASH, |_params: Params| async {
-            Ok(Value::String("0x1".to_owned()))
-        });
+        io.add_method(
+            methods::ETH_GET_UNCLE_COUNT_BY_BLOCK_HASH,
+            |_params: Params| async { Ok(Value::String("0x1".to_owned())) },
+        );
 
-        io.add_method(methods::ETH_GET_UNCLE_COUNT_BY_BLOCK_NUMBER, |_params: Params| async {
-            Ok(Value::String("0x1".to_owned()))
-        });
+        io.add_method(
+            methods::ETH_GET_UNCLE_COUNT_BY_BLOCK_NUMBER,
+            |_params: Params| async { Ok(Value::String("0x1".to_owned())) },
+        );
 
         io.add_method(methods::ETH_GET_CODE, |_params: Params| async {
             Ok(Value::String("0x600160008035811a818181146012578301005b601b6001356025565b8060005260206000f25b600060078202905091905056".to_owned()))
@@ -154,11 +198,15 @@ impl Entry {
         });
 
         io.add_method(methods::ETH_SEND_TRANSACTION, |_params: Params| async {
-            Ok(Value::String("0xe670ec64341771606e55d6b4ca35a1a6b75ee3d5145a99d05921026d1527331".to_owned()))
+            Ok(Value::String(
+                "0xe670ec64341771606e55d6b4ca35a1a6b75ee3d5145a99d05921026d1527331".to_owned(),
+            ))
         });
 
         io.add_method(methods::ETH_SEND_RAW_TRANSACTION, |_params: Params| async {
-            Ok(Value::String("0xe670ec64341771606e55d6b4ca35a1a6b75ee3d5145a99d05921026d1527331".to_owned()))
+            Ok(Value::String(
+                "0xe670ec64341771606e55d6b4ca35a1a6b75ee3d5145a99d05921026d1527331".to_owned(),
+            ))
         });
 
         io.add_method(methods::ETH_CALL, |_params: Params| async {
@@ -273,87 +321,274 @@ impl Entry {
             Ok(Value::Object(data))
         });
 
-        io.add_method(methods::ETH_GET_TRANSACTION_BY_HASH, |_params: Params| async {
-            let mut data = jsonrpc_core::serde_json::Map::new();
-            data.insert("blockHash".to_string(), Value::String("0x1d59ff54b1eb26b013ce3cb5fc9dab3705b415a67127a003c3e61eb445bb8df2".to_owned()));
-            data.insert("blockNumber".to_string(), Value::String("0x5daf3b".to_owned()));
-            data.insert("from".to_string(), Value::String("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d".to_owned()));
-            data.insert("gas".to_string(), Value::String("0xc350".to_owned()));
-            data.insert("gasPrice".to_string(), Value::String("0x4a817c800".to_owned()));
-            data.insert("hash".to_string(), Value::String("0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b".to_owned()));
-            data.insert("input".to_string(), Value::String("0x68656c6c6f21".to_owned()));
-            data.insert("nonce".to_string(), Value::String("0x15".to_owned()));
-            data.insert("to".to_string(), Value::String("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb".to_owned()));
-            data.insert("transactionIndex".to_string(), Value::String("0x41".to_owned()));
-            data.insert("value".to_string(), Value::String("0xf3dbb76162000".to_owned()));
-            data.insert("v".to_string(), Value::String("0x25".to_owned()));
-            data.insert("r".to_string(), Value::String("0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea".to_owned()));
-            data.insert("s".to_string(), Value::String("0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c".to_owned()));
-            data.insert("value".to_string(), Value::String("0xf3dbb76162000".to_owned()));
+        io.add_method(
+            methods::ETH_GET_TRANSACTION_BY_HASH,
+            |_params: Params| async {
+                let mut data = jsonrpc_core::serde_json::Map::new();
+                data.insert(
+                    "blockHash".to_string(),
+                    Value::String(
+                        "0x1d59ff54b1eb26b013ce3cb5fc9dab3705b415a67127a003c3e61eb445bb8df2"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "blockNumber".to_string(),
+                    Value::String("0x5daf3b".to_owned()),
+                );
+                data.insert(
+                    "from".to_string(),
+                    Value::String("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d".to_owned()),
+                );
+                data.insert("gas".to_string(), Value::String("0xc350".to_owned()));
+                data.insert(
+                    "gasPrice".to_string(),
+                    Value::String("0x4a817c800".to_owned()),
+                );
+                data.insert(
+                    "hash".to_string(),
+                    Value::String(
+                        "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "input".to_string(),
+                    Value::String("0x68656c6c6f21".to_owned()),
+                );
+                data.insert("nonce".to_string(), Value::String("0x15".to_owned()));
+                data.insert(
+                    "to".to_string(),
+                    Value::String("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb".to_owned()),
+                );
+                data.insert(
+                    "transactionIndex".to_string(),
+                    Value::String("0x41".to_owned()),
+                );
+                data.insert(
+                    "value".to_string(),
+                    Value::String("0xf3dbb76162000".to_owned()),
+                );
+                data.insert("v".to_string(), Value::String("0x25".to_owned()));
+                data.insert(
+                    "r".to_string(),
+                    Value::String(
+                        "0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "s".to_string(),
+                    Value::String(
+                        "0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "value".to_string(),
+                    Value::String("0xf3dbb76162000".to_owned()),
+                );
 
-            Ok(Value::Object(data))
-        });
+                Ok(Value::Object(data))
+            },
+        );
 
-        io.add_method(methods::ETH_GET_TRANSACTION_BY_BLOCK_HASH_AND_INDEX, |_params: Params| async {
-            let mut data = jsonrpc_core::serde_json::Map::new();
-            data.insert("blockHash".to_string(), Value::String("0x1d59ff54b1eb26b013ce3cb5fc9dab3705b415a67127a003c3e61eb445bb8df2".to_owned()));
-            data.insert("blockNumber".to_string(), Value::String("0x5daf3b".to_owned()));
-            data.insert("from".to_string(), Value::String("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d".to_owned()));
-            data.insert("gas".to_string(), Value::String("0xc350".to_owned()));
-            data.insert("gasPrice".to_string(), Value::String("0x4a817c800".to_owned()));
-            data.insert("hash".to_string(), Value::String("0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b".to_owned()));
-            data.insert("input".to_string(), Value::String("0x68656c6c6f21".to_owned()));
-            data.insert("nonce".to_string(), Value::String("0x15".to_owned()));
-            data.insert("to".to_string(), Value::String("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb".to_owned()));
-            data.insert("transactionIndex".to_string(), Value::String("0x41".to_owned()));
-            data.insert("value".to_string(), Value::String("0xf3dbb76162000".to_owned()));
-            data.insert("v".to_string(), Value::String("0x25".to_owned()));
-            data.insert("r".to_string(), Value::String("0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea".to_owned()));
-            data.insert("s".to_string(), Value::String("0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c".to_owned()));
-            data.insert("value".to_string(), Value::String("0xf3dbb76162000".to_owned()));
+        io.add_method(
+            methods::ETH_GET_TRANSACTION_BY_BLOCK_HASH_AND_INDEX,
+            |_params: Params| async {
+                let mut data = jsonrpc_core::serde_json::Map::new();
+                data.insert(
+                    "blockHash".to_string(),
+                    Value::String(
+                        "0x1d59ff54b1eb26b013ce3cb5fc9dab3705b415a67127a003c3e61eb445bb8df2"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "blockNumber".to_string(),
+                    Value::String("0x5daf3b".to_owned()),
+                );
+                data.insert(
+                    "from".to_string(),
+                    Value::String("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d".to_owned()),
+                );
+                data.insert("gas".to_string(), Value::String("0xc350".to_owned()));
+                data.insert(
+                    "gasPrice".to_string(),
+                    Value::String("0x4a817c800".to_owned()),
+                );
+                data.insert(
+                    "hash".to_string(),
+                    Value::String(
+                        "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "input".to_string(),
+                    Value::String("0x68656c6c6f21".to_owned()),
+                );
+                data.insert("nonce".to_string(), Value::String("0x15".to_owned()));
+                data.insert(
+                    "to".to_string(),
+                    Value::String("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb".to_owned()),
+                );
+                data.insert(
+                    "transactionIndex".to_string(),
+                    Value::String("0x41".to_owned()),
+                );
+                data.insert(
+                    "value".to_string(),
+                    Value::String("0xf3dbb76162000".to_owned()),
+                );
+                data.insert("v".to_string(), Value::String("0x25".to_owned()));
+                data.insert(
+                    "r".to_string(),
+                    Value::String(
+                        "0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "s".to_string(),
+                    Value::String(
+                        "0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "value".to_string(),
+                    Value::String("0xf3dbb76162000".to_owned()),
+                );
 
-            Ok(Value::Object(data))
-        });
+                Ok(Value::Object(data))
+            },
+        );
 
-        io.add_method(methods::ETH_GET_TRANSACTION_BY_BLOCK_NUMBER_AND_INDEX, |_params: Params| async {
-            let mut data = jsonrpc_core::serde_json::Map::new();
-            data.insert("blockHash".to_string(), Value::String("0x1d59ff54b1eb26b013ce3cb5fc9dab3705b415a67127a003c3e61eb445bb8df2".to_owned()));
-            data.insert("blockNumber".to_string(), Value::String("0x5daf3b".to_owned()));
-            data.insert("from".to_string(), Value::String("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d".to_owned()));
-            data.insert("gas".to_string(), Value::String("0xc350".to_owned()));
-            data.insert("gasPrice".to_string(), Value::String("0x4a817c800".to_owned()));
-            data.insert("hash".to_string(), Value::String("0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b".to_owned()));
-            data.insert("input".to_string(), Value::String("0x68656c6c6f21".to_owned()));
-            data.insert("nonce".to_string(), Value::String("0x15".to_owned()));
-            data.insert("to".to_string(), Value::String("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb".to_owned()));
-            data.insert("transactionIndex".to_string(), Value::String("0x41".to_owned()));
-            data.insert("value".to_string(), Value::String("0xf3dbb76162000".to_owned()));
-            data.insert("v".to_string(), Value::String("0x25".to_owned()));
-            data.insert("r".to_string(), Value::String("0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea".to_owned()));
-            data.insert("s".to_string(), Value::String("0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c".to_owned()));
-            data.insert("value".to_string(), Value::String("0xf3dbb76162000".to_owned()));
+        io.add_method(
+            methods::ETH_GET_TRANSACTION_BY_BLOCK_NUMBER_AND_INDEX,
+            |_params: Params| async {
+                let mut data = jsonrpc_core::serde_json::Map::new();
+                data.insert(
+                    "blockHash".to_string(),
+                    Value::String(
+                        "0x1d59ff54b1eb26b013ce3cb5fc9dab3705b415a67127a003c3e61eb445bb8df2"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "blockNumber".to_string(),
+                    Value::String("0x5daf3b".to_owned()),
+                );
+                data.insert(
+                    "from".to_string(),
+                    Value::String("0xa7d9ddbe1f17865597fbd27ec712455208b6b76d".to_owned()),
+                );
+                data.insert("gas".to_string(), Value::String("0xc350".to_owned()));
+                data.insert(
+                    "gasPrice".to_string(),
+                    Value::String("0x4a817c800".to_owned()),
+                );
+                data.insert(
+                    "hash".to_string(),
+                    Value::String(
+                        "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "input".to_string(),
+                    Value::String("0x68656c6c6f21".to_owned()),
+                );
+                data.insert("nonce".to_string(), Value::String("0x15".to_owned()));
+                data.insert(
+                    "to".to_string(),
+                    Value::String("0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb".to_owned()),
+                );
+                data.insert(
+                    "transactionIndex".to_string(),
+                    Value::String("0x41".to_owned()),
+                );
+                data.insert(
+                    "value".to_string(),
+                    Value::String("0xf3dbb76162000".to_owned()),
+                );
+                data.insert("v".to_string(), Value::String("0x25".to_owned()));
+                data.insert(
+                    "r".to_string(),
+                    Value::String(
+                        "0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "s".to_string(),
+                    Value::String(
+                        "0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "value".to_string(),
+                    Value::String("0xf3dbb76162000".to_owned()),
+                );
 
-            Ok(Value::Object(data))
-        });
+                Ok(Value::Object(data))
+            },
+        );
 
-        io.add_method(methods::ETH_GET_TRANSACTION_RECEIPT, |_params: Params| async {
-            let mut data = jsonrpc_core::serde_json::Map::new();
-            data.insert("transactionHash".to_string(), Value::String("0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238".to_owned()));
-            data.insert("transactionIndex".to_string(), Value::String("0x1".to_owned()));
-            data.insert("blockNumber".to_string(), Value::String("0xb".to_owned()));
-            data.insert("blockHash".to_string(), Value::String("0xc6ef2fc5426d6ad6fd9e2a26abeab0aa2411b7ab17f30a99d3cb96aed1d1055b".to_owned()));
-            data.insert("cumulativeGasUsed".to_string(), Value::String("0x33bc".to_owned()));
-            data.insert("gasUsed".to_string(), Value::String("0x4dc".to_owned()));
-            data.insert("contractAddress".to_string(), Value::String("0xb60e8dd61c5d32be8058bb8eb970870f07233155".to_owned()));
-            data.insert("logs".to_string(), Value::Array(vec![Value::String("...".to_owned())]));
-            data.insert("logsBloom".to_string(), Value::String("0x00...0".to_owned()));
-            data.insert("status".to_string(), Value::String("0x1".to_owned()));
+        io.add_method(
+            methods::ETH_GET_TRANSACTION_RECEIPT,
+            |_params: Params| async {
+                let mut data = jsonrpc_core::serde_json::Map::new();
+                data.insert(
+                    "transactionHash".to_string(),
+                    Value::String(
+                        "0xb903239f8543d04b5dc1ba6579132b143087c68db1b2168786408fcbce568238"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "transactionIndex".to_string(),
+                    Value::String("0x1".to_owned()),
+                );
+                data.insert("blockNumber".to_string(), Value::String("0xb".to_owned()));
+                data.insert(
+                    "blockHash".to_string(),
+                    Value::String(
+                        "0xc6ef2fc5426d6ad6fd9e2a26abeab0aa2411b7ab17f30a99d3cb96aed1d1055b"
+                            .to_owned(),
+                    ),
+                );
+                data.insert(
+                    "cumulativeGasUsed".to_string(),
+                    Value::String("0x33bc".to_owned()),
+                );
+                data.insert("gasUsed".to_string(), Value::String("0x4dc".to_owned()));
+                data.insert(
+                    "contractAddress".to_string(),
+                    Value::String("0xb60e8dd61c5d32be8058bb8eb970870f07233155".to_owned()),
+                );
+                data.insert(
+                    "logs".to_string(),
+                    Value::Array(vec![Value::String("...".to_owned())]),
+                );
+                data.insert(
+                    "logsBloom".to_string(),
+                    Value::String("0x00...0".to_owned()),
+                );
+                data.insert("status".to_string(), Value::String("0x1".to_owned()));
 
-            Ok(Value::Object(data))
-        });
+                Ok(Value::Object(data))
+            },
+        );
 
         io.add_method(methods::ETH_GET_COMPILERS, |_params: Params| async {
-            Ok(Value::Array(vec![Value::String("solidity".to_owned()), Value::String("lll".to_owned()), Value::String("serpent".to_owned())]))
+            Ok(Value::Array(vec![
+                Value::String("solidity".to_owned()),
+                Value::String("lll".to_owned()),
+                Value::String("serpent".to_owned()),
+            ]))
         });
 
         io.add_method(methods::ETH_COMPILE_LLL, |_params: Params| async {
@@ -403,9 +638,10 @@ impl Entry {
             Ok(Value::String("0x1".to_owned()))
         });
 
-        io.add_method(methods::ETH_NEW_PENDING_TRANSACTION_FILTER, |_params: Params| async {
-            Ok(Value::String("0x1".to_owned()))
-        });
+        io.add_method(
+            methods::ETH_NEW_PENDING_TRANSACTION_FILTER,
+            |_params: Params| async { Ok(Value::String("0x1".to_owned())) },
+        );
 
         io.add_method(methods::ETH_UNINSTALL_FILTER, |_params: Params| async {
             Ok(Value::Bool(true))
@@ -415,12 +651,38 @@ impl Entry {
             let mut data = jsonrpc_core::serde_json::Map::new();
             data.insert("logIndex".to_string(), Value::String("0x1".to_owned()));
             data.insert("blockNumber".to_string(), Value::String("0x1b4".to_owned()));
-            data.insert("blockHash".to_string(), Value::String("0x8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned()));
-            data.insert("transactionHash".to_string(), Value::String("0xdf829c5a142f1fccd7d8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcf".to_owned()));
-            data.insert("transactionIndex".to_string(), Value::String("0x0".to_owned()));
-            data.insert("address".to_string(), Value::String("0x16c5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned()));
-            data.insert("data".to_string(), Value::String("0x0000000000000000000000000000000000000000000000000000000000000000".to_owned()));
-            data.insert("topics".to_string(), Value::Array(vec![Value::String("0x59ebeb90bc63057b6515673c3ecf9438e5058bca0f92585014eced636878c9a5".to_owned())]));
+            data.insert(
+                "blockHash".to_string(),
+                Value::String(
+                    "0x8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned(),
+                ),
+            );
+            data.insert(
+                "transactionHash".to_string(),
+                Value::String(
+                    "0xdf829c5a142f1fccd7d8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcf".to_owned(),
+                ),
+            );
+            data.insert(
+                "transactionIndex".to_string(),
+                Value::String("0x0".to_owned()),
+            );
+            data.insert(
+                "address".to_string(),
+                Value::String("0x16c5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned()),
+            );
+            data.insert(
+                "data".to_string(),
+                Value::String(
+                    "0x0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+                ),
+            );
+            data.insert(
+                "topics".to_string(),
+                Value::Array(vec![Value::String(
+                    "0x59ebeb90bc63057b6515673c3ecf9438e5058bca0f92585014eced636878c9a5".to_owned(),
+                )]),
+            );
 
             Ok(Value::Array(vec![Value::Object(data)]))
         });
@@ -429,12 +691,38 @@ impl Entry {
             let mut data = jsonrpc_core::serde_json::Map::new();
             data.insert("logIndex".to_string(), Value::String("0x1".to_owned()));
             data.insert("blockNumber".to_string(), Value::String("0x1b4".to_owned()));
-            data.insert("blockHash".to_string(), Value::String("0x8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned()));
-            data.insert("transactionHash".to_string(), Value::String("0xdf829c5a142f1fccd7d8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcf".to_owned()));
-            data.insert("transactionIndex".to_string(), Value::String("0x0".to_owned()));
-            data.insert("address".to_string(), Value::String("0x16c5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned()));
-            data.insert("data".to_string(), Value::String("0x0000000000000000000000000000000000000000000000000000000000000000".to_owned()));
-            data.insert("topics".to_string(), Value::Array(vec![Value::String("0x59ebeb90bc63057b6515673c3ecf9438e5058bca0f92585014eced636878c9a5".to_owned())]));
+            data.insert(
+                "blockHash".to_string(),
+                Value::String(
+                    "0x8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned(),
+                ),
+            );
+            data.insert(
+                "transactionHash".to_string(),
+                Value::String(
+                    "0xdf829c5a142f1fccd7d8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcf".to_owned(),
+                ),
+            );
+            data.insert(
+                "transactionIndex".to_string(),
+                Value::String("0x0".to_owned()),
+            );
+            data.insert(
+                "address".to_string(),
+                Value::String("0x16c5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned()),
+            );
+            data.insert(
+                "data".to_string(),
+                Value::String(
+                    "0x0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+                ),
+            );
+            data.insert(
+                "topics".to_string(),
+                Value::Array(vec![Value::String(
+                    "0x59ebeb90bc63057b6515673c3ecf9438e5058bca0f92585014eced636878c9a5".to_owned(),
+                )]),
+            );
 
             Ok(Value::Array(vec![Value::Object(data)]))
         });
@@ -443,18 +731,54 @@ impl Entry {
             let mut data = jsonrpc_core::serde_json::Map::new();
             data.insert("logIndex".to_string(), Value::String("0x1".to_owned()));
             data.insert("blockNumber".to_string(), Value::String("0x1b4".to_owned()));
-            data.insert("blockHash".to_string(), Value::String("0x8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned()));
-            data.insert("transactionHash".to_string(), Value::String("0xdf829c5a142f1fccd7d8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcf".to_owned()));
-            data.insert("transactionIndex".to_string(), Value::String("0x0".to_owned()));
-            data.insert("address".to_string(), Value::String("0x16c5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned()));
-            data.insert("data".to_string(), Value::String("0x0000000000000000000000000000000000000000000000000000000000000000".to_owned()));
-            data.insert("topics".to_string(), Value::Array(vec![Value::String("0x59ebeb90bc63057b6515673c3ecf9438e5058bca0f92585014eced636878c9a5".to_owned())]));
+            data.insert(
+                "blockHash".to_string(),
+                Value::String(
+                    "0x8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned(),
+                ),
+            );
+            data.insert(
+                "transactionHash".to_string(),
+                Value::String(
+                    "0xdf829c5a142f1fccd7d8216c5785ac562ff41e2dcfdf5785ac562ff41e2dcf".to_owned(),
+                ),
+            );
+            data.insert(
+                "transactionIndex".to_string(),
+                Value::String("0x0".to_owned()),
+            );
+            data.insert(
+                "address".to_string(),
+                Value::String("0x16c5785ac562ff41e2dcfdf829c5a142f1fccd7d".to_owned()),
+            );
+            data.insert(
+                "data".to_string(),
+                Value::String(
+                    "0x0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+                ),
+            );
+            data.insert(
+                "topics".to_string(),
+                Value::Array(vec![Value::String(
+                    "0x59ebeb90bc63057b6515673c3ecf9438e5058bca0f92585014eced636878c9a5".to_owned(),
+                )]),
+            );
 
             Ok(Value::Array(vec![Value::Object(data)]))
         });
 
         io.add_method(methods::ETH_GET_WORK, |_params: Params| async {
-            Ok(Value::Array(vec![Value::String("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_owned()), Value::String("0x5EED00000000000000000000000000005EED0000000000000000000000000000".to_owned()), Value::String("0xd1ff1c01710000000000000000000000d1ff1c01710000000000000000000000".to_owned())]))
+            Ok(Value::Array(vec![
+                Value::String(
+                    "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_owned(),
+                ),
+                Value::String(
+                    "0x5EED00000000000000000000000000005EED0000000000000000000000000000".to_owned(),
+                ),
+                Value::String(
+                    "0xd1ff1c01710000000000000000000000d1ff1c01710000000000000000000000".to_owned(),
+                ),
+            ]))
         });
 
         io.add_method(methods::ETH_SUBMIT_WORK, |_params: Params| async {
@@ -515,14 +839,31 @@ impl Entry {
 
         io.add_method(methods::SHH_GET_FILTER_CHANGES, |_params: Params| async {
             let mut data = jsonrpc_core::serde_json::Map::new();
-            data.insert("hash".to_string(), Value::String("0x33eb2da77bf3527e28f8bf493650b1879b08c4f2a362beae4ba2f71bafcd91f9".to_owned()));
-            data.insert("from".to_string(), Value::String("0x3ec052fc33..".to_owned()));
-            data.insert("to".to_string(), Value::String("0x87gdf76g8d7fgdfg...".to_owned()));
+            data.insert(
+                "hash".to_string(),
+                Value::String(
+                    "0x33eb2da77bf3527e28f8bf493650b1879b08c4f2a362beae4ba2f71bafcd91f9".to_owned(),
+                ),
+            );
+            data.insert(
+                "from".to_string(),
+                Value::String("0x3ec052fc33..".to_owned()),
+            );
+            data.insert(
+                "to".to_string(),
+                Value::String("0x87gdf76g8d7fgdfg...".to_owned()),
+            );
             data.insert("expiry".to_string(), Value::String("0x54caa50a".to_owned()));
             data.insert("sent".to_string(), Value::String("0x54ca9ea2".to_owned()));
             data.insert("ttl".to_string(), Value::String("0x64".to_owned()));
-            data.insert("topics".to_string(), Value::Array(vec![Value::String("0x6578616d".to_owned())]));
-            data.insert("payload".to_string(), Value::String("0x7b2274797065223a226d657373616765222c2263686...".to_owned()));
+            data.insert(
+                "topics".to_string(),
+                Value::Array(vec![Value::String("0x6578616d".to_owned())]),
+            );
+            data.insert(
+                "payload".to_string(),
+                Value::String("0x7b2274797065223a226d657373616765222c2263686...".to_owned()),
+            );
             data.insert("workProved".to_string(), Value::String("0x0".to_owned()));
 
             Ok(Value::Array(vec![Value::Object(data)]))
@@ -530,14 +871,31 @@ impl Entry {
 
         io.add_method(methods::SHH_GET_MESSAGES, |_params: Params| async {
             let mut data = jsonrpc_core::serde_json::Map::new();
-            data.insert("hash".to_string(), Value::String("0x33eb2da77bf3527e28f8bf493650b1879b08c4f2a362beae4ba2f71bafcd91f9".to_owned()));
-            data.insert("from".to_string(), Value::String("0x3ec052fc33..".to_owned()));
-            data.insert("to".to_string(), Value::String("0x87gdf76g8d7fgdfg...".to_owned()));
+            data.insert(
+                "hash".to_string(),
+                Value::String(
+                    "0x33eb2da77bf3527e28f8bf493650b1879b08c4f2a362beae4ba2f71bafcd91f9".to_owned(),
+                ),
+            );
+            data.insert(
+                "from".to_string(),
+                Value::String("0x3ec052fc33..".to_owned()),
+            );
+            data.insert(
+                "to".to_string(),
+                Value::String("0x87gdf76g8d7fgdfg...".to_owned()),
+            );
             data.insert("expiry".to_string(), Value::String("0x54caa50a".to_owned()));
             data.insert("sent".to_string(), Value::String("0x54ca9ea2".to_owned()));
             data.insert("ttl".to_string(), Value::String("0x64".to_owned()));
-            data.insert("topics".to_string(), Value::Array(vec![Value::String("0x6578616d".to_owned())]));
-            data.insert("payload".to_string(), Value::String("0x7b2274797065223a226d657373616765222c2263686...".to_owned()));
+            data.insert(
+                "topics".to_string(),
+                Value::Array(vec![Value::String("0x6578616d".to_owned())]),
+            );
+            data.insert(
+                "payload".to_string(),
+                Value::String("0x7b2274797065223a226d657373616765222c2263686...".to_owned()),
+            );
             data.insert("workProved".to_string(), Value::String("0x0".to_owned()));
 
             Ok(Value::Array(vec![Value::Object(data)]))
@@ -545,14 +903,75 @@ impl Entry {
 
         io
     }
+
+    fn setup_sub_methods(&self) -> IoHandler {
+        let mut io = IoHandler::default();
+
+        io.add_method(methods::SUB_GET_BLOCK_HASH, |_params: Params| async {
+            Ok(Value::String(
+                "0x1f5b0e09646fba0bb9438e853bcf205881ca6d96462239a88f72447377e2e8c1".into(),
+            ))
+        });
+
+        io.add_method(methods::SUB_GET_METADATA, |_params: Params| async {
+            Ok(Value::String(substrate::METADATA.into()))
+        });
+
+        io.add_method(methods::SUB_GET_RUNTIME_VERSION, |_params: Params| async {
+            Ok(Value::Object({
+                // Unwrap is safe here as we already checked converting this string
+                // constant into a JSON object
+                jsonrpc_core::serde_json::from_str(
+                    r#"
+                    {
+                        "specName": "node-template",
+                        "implName": "node-template",
+                        "authoringVersion": 1,
+                        "specVersion": 100,
+                        "implVersion": 1,
+                        "apis": [
+                            [ "0xdf6acb689907609b", 4],
+                            [ "0x37e397fc7c91f5e4", 1],
+                            [ "0x40fe3ad401f8959a", 6],
+                            [ "0xd2bc9897eed08f15", 3],
+                            [ "0xf78b278be53f454c", 2],
+                            [ "0xdd718d5cc53262d4", 1],
+                            [ "0xab3c0572291feb8b", 1],
+                            [ "0xed99c5acb25eedf5", 3],
+                            [ "0xbc9d89904f5b923f", 1],
+                            [ "0x37c8bb1350a9a2a8", 1]
+                        ],
+                        "transactionVersion": 1,
+                        "stateVersion": 1
+                    }"#,
+                )
+                .expect("Invalid JSON string?")
+            }))
+        });
+
+        io.add_method(methods::SUB_GET_STORAGE, |_params: Params| async {
+            Ok(Value::String("0x0000000000000000010000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000".into()))
+        });
+
+        io.add_method(methods::SUB_SUBMIT_EXTRINSIC, |_params: Params| async {
+            Ok(Value::String(
+                "0x9b68c08efdaa21485478b398e7009e49221c188291498ce89d62bfa5cbe43df0".into(),
+            ))
+        });
+
+        io
+    }
 }
 
-struct LoggerMiddleware{}
+struct LoggerMiddleware {}
 
 impl RequestMiddleware for LoggerMiddleware {
     fn on_request(&self, request: Request<Body>) -> RequestMiddlewareAction {
         info!("Incoming {:?}", request);
-        RequestMiddlewareAction::Proceed { should_continue_on_invalid_cors: false, request }
+        RequestMiddlewareAction::Proceed {
+            should_continue_on_invalid_cors: false,
+            request,
+        }
     }
 }
 
@@ -563,7 +982,7 @@ mod tests {
 
     #[test]
     fn test_web3_client_version() {
-        Entry::new("127.0.0.1:8545", "info").serve_silent();
+        Entry::new(ServerType::HTTP, "127.0.0.1:8545", "info").serve_silent();
 
         let mut map = HashMap::new();
         map.insert("jsonrpc", "2.0");
@@ -573,18 +992,14 @@ mod tests {
 
         let client = reqwest::blocking::Client::new();
 
-        let res = client.post("http://127.0.0.1:8545")
-            .json(&map)
-            .send();
+        let res = client.post("http://127.0.0.1:8545").json(&map).send();
 
         match res {
-            Ok(data) => {
-                match data.text() {
-                    Ok(t) => {
-                        assert_eq!(String::from(r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid request"},"id":"73"}"#.to_owned()+"\n"), t);
-                    },
-                    Err(err) => println!("{}", err),
+            Ok(data) => match data.text() {
+                Ok(t) => {
+                    assert_eq!(String::from(r#"{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid request"},"id":"73"}"#.to_owned()+"\n"), t);
                 }
+                Err(err) => println!("{}", err),
             },
             Err(err) => println!("{}", err),
         }
