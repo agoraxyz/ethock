@@ -1,4 +1,4 @@
-use ethock_lib::server;
+use ethock_lib::server::{Entry, ServerType};
 
 fn main() {
     let mut addr: &str = "localhost:8545";
@@ -6,5 +6,5 @@ fn main() {
     if args.len() > 1 {
         addr = &args[1][..];
     }
-    server::Entry::new(addr, "debug").serve();
+    Entry::new(ServerType::HTTP, addr, "debug").serve();
 }
