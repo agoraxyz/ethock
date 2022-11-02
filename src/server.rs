@@ -911,22 +911,29 @@ impl Entry {
     fn setup_sub_methods(&self) -> IoHandler {
         let mut io = IoHandler::default();
 
-        io.add_method(methods::SUB_GET_BLOCK_HASH, |_params: Params| async {
+        io.add_method(
+            methods::SUB_SYSTEM_ACCOUNT_NEXT_INDEX,
+            |_params: Params| async { Ok(Value::Number(1.into())) },
+        );
+
+        io.add_method(methods::SUB_CHAIN_GET_BLOCK_HASH, |_params: Params| async {
             Ok(Value::String(
                 "0x1f5b0e09646fba0bb9438e853bcf205881ca6d96462239a88f72447377e2e8c1".into(),
             ))
         });
 
-        io.add_method(methods::SUB_GET_METADATA, |_params: Params| async {
+        io.add_method(methods::SUB_STATE_GET_METADATA, |_params: Params| async {
             Ok(Value::String(substrate::METADATA.into()))
         });
 
-        io.add_method(methods::SUB_GET_RUNTIME_VERSION, |_params: Params| async {
-            Ok(Value::Object({
-                // Unwrap is safe here as we already checked converting this string
-                // constant into a JSON object
-                jsonrpc_core::serde_json::from_str(
-                    r#"
+        io.add_method(
+            methods::SUB_STATE_GET_RUNTIME_VERSION,
+            |_params: Params| async {
+                Ok(Value::Object({
+                    // Unwrap is safe here as we already checked converting this string
+                    // constant into a JSON object
+                    jsonrpc_core::serde_json::from_str(
+                        r#"
                     {
                         "specName": "node-template",
                         "implName": "node-template",
@@ -948,20 +955,24 @@ impl Entry {
                         "transactionVersion": 1,
                         "stateVersion": 1
                     }"#,
-                )
-                .expect("Invalid JSON string?")
-            }))
-        });
+                    )
+                    .expect("Invalid JSON string?")
+                }))
+            },
+        );
 
-        io.add_method(methods::SUB_GET_STORAGE, |_params: Params| async {
+        io.add_method(methods::SUB_STATE_GET_STORAGE, |_params: Params| async {
             Ok(Value::String("0x0000000000000000010000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000".into()))
         });
 
-        io.add_method(methods::SUB_SUBMIT_EXTRINSIC, |_params: Params| async {
-            Ok(Value::String(
-                "0x9b68c08efdaa21485478b398e7009e49221c188291498ce89d62bfa5cbe43df0".into(),
-            ))
-        });
+        io.add_method(
+            methods::SUB_AUTHOR_SUBMIT_EXTRINSIC,
+            |_params: Params| async {
+                Ok(Value::String(
+                    "0x9b68c08efdaa21485478b398e7009e49221c188291498ce89d62bfa5cbe43df0".into(),
+                ))
+            },
+        );
 
         io
     }
