@@ -1,8 +1,10 @@
 pub const WEB3_CLIENT_VERSION: &str = "web3_clientVersion";
 pub const WEB3_SHA3: &str = "web3_sha3";
+
 pub const NET_VERSION: &str = "net_version";
 pub const NET_PEER_COUNT: &str = "net_peerCount";
 pub const NET_LISTENING: &str = "net_listening";
+
 pub const ETH_PROTOCOL_VERSION: &str = "eth_protocolVersion";
 pub const ETH_SYNCING: &str = "eth_syncing";
 pub const ETH_COINBASE: &str = "eth_coinbase";
@@ -49,10 +51,12 @@ pub const ETH_GET_LOGS: &str = "eth_getLogs";
 pub const ETH_SUBMIT_WORK: &str = "eth_submitWork";
 pub const ETH_GET_WORK: &str = "eth_getWork";
 pub const ETH_SUBMIT_HASHRATE: &str = "eth_submitHashrate";
+
 pub const DB_PUT_STRING: &str = "db_putString";
 pub const DB_GET_STRING: &str = "db_getString";
 pub const DB_PUT_HEX: &str = "db_putHex";
 pub const DB_GET_HEX: &str = "db_getHex";
+
 pub const SHH_POST: &str = "shh_post";
 pub const SHH_VERSION: &str = "shh_version";
 pub const SHH_NEW_IDENTITY: &str = "shh_newIdentity";
@@ -63,8 +67,28 @@ pub const SHH_NEW_FILTER: &str = "shh_newFilter";
 pub const SHH_UNINSTALL_FILTER: &str = "shh_uninstallFilter";
 pub const SHH_GET_FILTER_CHANGES: &str = "shh_getFilterChanges";
 pub const SHH_GET_MESSAGES: &str = "shh_getMessages";
-pub const SUB_GET_BLOCK_HASH: &str = "chain_getBlockHash";
-pub const SUB_GET_METADATA: &str = "state_getMetadata";
-pub const SUB_GET_RUNTIME_VERSION: &str = "state_getRuntimeVersion";
-pub const SUB_GET_STORAGE: &str = "state_getStorage";
-pub const SUB_SUBMIT_EXTRINSIC: &str = "author_submitExtrinsic";
+
+pub const SUB_AUTHOR_HAS_KEY: &str = "author_hasKey";
+pub const SUB_AUTHOR_INSERT_KEY: &str = "author_insertKey";
+pub const SUB_AUTHOR_HAS_SESSION_KEYS: &str = "author_hasSessionKeys";
+pub const SUB_AUTHOR_ROTATE_KEYS: &str = "author_rotateKeys";
+pub const SUB_AUTHOR_SUBMIT_EXTRINSIC: &str = "author_submitExtrinsic";
+pub const SUB_CHAIN_GET_BLOCK: &str = "chain_getBlock";
+pub const SUB_CHAIN_GET_BLOCK_HASH: &str = "chain_getBlockHash";
+pub const SUB_CHAIN_GET_FINALIZED_HEAD: &str = "chain_getFinalizedHead";
+pub const SUB_CHAIN_GET_HEADER: &str = "chain_getHeader";
+pub const SUB_DEV_GET_BLOCK_STATS: &str = "dev_getBlockStats";
+pub const SUB_STATE_GET_KEYS_PAGED: &str = "state_getKeysPaged";
+pub const SUB_STATE_GET_METADATA: &str = "state_getMetadata";
+pub const SUB_STATE_GET_READ_PROOF: &str = "state_getReadProof";
+pub const SUB_STATE_GET_RUNTIME_VERSION: &str = "state_getRuntimeVersion";
+pub const SUB_STATE_GET_STORAGE: &str = "state_getStorage";
+pub const SUB_STATE_QUERY_STORAGE: &str = "state_queryStorage";
+pub const SUB_STATE_QUERY_STORAGE_AT: &str = "state_queryStorageAt";
+pub const SUB_SYSTEM_ACCOUNT_NEXT_INDEX: &str = "system_accountNextIndex";
+pub const SUB_SYSTEM_CHAIN: &str = "system_chain";
+pub const SUB_SYSTEM_DRY_RUN: &str = "system_dryRun";
+pub const SUB_SYSTEM_HEALTH: &str = "system_health";
+pub const SUB_SYSTEM_NAME: &str = "system_name";
+pub const SUB_SYSTEM_PROPERTIES: &str = "system_properties";
+pub const SUB_SYSTEM_VERSION: &str = "system_version";
