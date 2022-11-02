@@ -1,10 +1,13 @@
 use crate::{methods, substrate};
 use env_logger::{Builder, Target};
-use jsonrpc_core::{Params, Value};
-use jsonrpc_core::IoHandler;
+use jsonrpc_core::{IoHandler, Params, Value};
 use jsonrpc_http_server::{
-    hyper::{Body, Request},
-    {RequestMiddleware, RequestMiddlewareAction},
+    hyper::{Body, Request as HttpRequest},
+    {RequestMiddleware as HttpMiddleware, RequestMiddlewareAction as HttpMiddlewareAction},
+};
+use jsonrpc_ws_server::{
+    ws::Request as WsRequest, MiddlewareAction as WsMiddlewareAction,
+    RequestMiddleware as WsMiddleware,
 };
 use log::{info, LevelFilter};
 use std::thread;
@@ -60,13 +63,14 @@ impl Entry {
             ServerType::HTTP => {
                 jsonrpc_http_server::ServerBuilder::new(self.setup_eth_methods())
                     .threads(3)
-                    .request_middleware(LoggerMiddleware {})
+                    .request_middleware(HttpLoggerMiddleware {})
                     .start_http(&self.addr.parse().unwrap())
                     .unwrap()
                     .wait();
             }
             ServerType::WS => {
                 jsonrpc_ws_server::ServerBuilder::new(self.setup_sub_methods())
+                    .request_middleware(WsLoggerMiddleware {})
                     .start(&self.addr.parse().unwrap())
                     .unwrap()
                     .wait()
@@ -963,15 +967,24 @@ impl Entry {
     }
 }
 
-struct LoggerMiddleware {}
+struct HttpLoggerMiddleware {}
 
-impl RequestMiddleware for LoggerMiddleware {
-    fn on_request(&self, request: Request<Body>) -> RequestMiddlewareAction {
+impl HttpMiddleware for HttpLoggerMiddleware {
+    fn on_request(&self, request: HttpRequest<Body>) -> HttpMiddlewareAction {
         info!("Incoming {:?}", request);
-        RequestMiddlewareAction::Proceed {
+        HttpMiddlewareAction::Proceed {
             should_continue_on_invalid_cors: false,
             request,
         }
+    }
+}
+
+struct WsLoggerMiddleware {}
+
+impl WsMiddleware for WsLoggerMiddleware {
+    fn process(&self, request: &WsRequest) -> WsMiddlewareAction {
+        info!("Incoming {:?}", request);
+        WsMiddlewareAction::Proceed
     }
 }
 
