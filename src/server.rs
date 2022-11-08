@@ -27,7 +27,7 @@ impl Clone for Entry {
     fn clone(&self) -> Entry {
         Entry {
             addr: self.addr.clone(),
-            server_type: self.server_type.clone(),
+            server_type: self.server_type,
         }
     }
 }
